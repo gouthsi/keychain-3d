@@ -1,116 +1,186 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>3D Keychain Preview</title>
-<style>
-    body { margin: 0; overflow: hidden; background: #ffffff; }
-</style>
+  <meta charset="UTF-8" />
+  <title>3D Keychain Text Preview</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #ffffff;
+    }
+    #preview {
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
 </head>
-
 <body>
-<div id="preview" style="width:100vw; height:100vh;"></div>
+  <div id="preview"></div>
 
-<!-- THREE.JS from jsDelivr (CORS safe) -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.128/build/three.min.js"></script>
+  <!-- Three.js (CORS-safe from jsDelivr) -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/loaders/FontLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/geometries/TextGeometry.js"></script>
 
-<!-- CORS-SAFE OrbitControls -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/controls/OrbitControls.js"></script>
+  <script>
+    let scene, camera, renderer, controls;
+    let keychainGroup = null;
+    let loadedFont = null;
+    let userInteracted = false;
 
-<!-- CORS-SAFE FontLoader -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/loaders/FontLoader.js"></script>
+    function init() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xffffff);
 
-<!-- CORS-SAFE TextGeometry -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/geometries/TextGeometry.js"></script>
+      const aspect = window.innerWidth / window.innerHeight;
+      camera = new THREE.PerspectiveCamera(45, aspect, 1, 2000);
+      camera.position.set(0, 70, 220);
 
-<script>
-let scene, camera, renderer, controls;
-let keychainBody, holeMesh, textMesh;
-let loadedFont = null;
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.getElementById("preview").appendChild(renderer.domElement);
 
-function init() {
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xffffff);
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.1;
+      controls.addEventListener("start", () => {
+        userInteracted = true; // stop auto-rotate when user touches
+      });
 
-    camera = new THREE.PerspectiveCamera(
-        45,
-        window.innerWidth / window.innerHeight,
-        1,
-        2000
-    );
-    camera.position.set(0, 80, 220);
+      // Lights
+      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+      const dir1 = new THREE.DirectionalLight(0xffffff, 0.8);
+      dir1.position.set(80, 120, 100);
+      scene.add(dir1);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.getElementById("preview").appendChild(renderer.domElement);
+      const dir2 = new THREE.DirectionalLight(0xffffff, 0.4);
+      dir2.position.set(-60, -80, -40);
+      scene.add(dir2);
 
-    controls = new THREE.OrbitControls(camera, renderer.domElement);
-
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-    dir.position.set(100, 100, 100);
-    scene.add(dir);
-
-    const loader = new THREE.FontLoader();
-    loader.load(
+      // Load font (approximation for Gill Sans – helvetiker)
+      const loader = new THREE.FontLoader();
+      loader.load(
         "https://cdn.jsdelivr.net/npm/three@0.128/examples/fonts/helvetiker_bold.typeface.json",
-        font => {
-            loadedFont = font;
-            buildKeychain("Your Name", "#ff0000", "#000000");
+        (font) => {
+          loadedFont = font;
+          buildKeychain("Your Name", "#ff0000", "#000000");
         }
-    );
+      );
 
-    animate();
-}
+      window.addEventListener("resize", onWindowResize);
+      animate();
+    }
 
-function buildKeychain(text, topColor, baseColor) {
-    if (!loadedFont) return;
+    function onWindowResize() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
 
-    if (keychainBody) scene.remove(keychainBody);
-    if (holeMesh) scene.remove(holeMesh);
-    if (textMesh) scene.remove(textMesh);
+    // text = name
+    // topColor = text layer color
+    // baseColor = offset base layer color
+    function buildKeychain(text, topColor, baseColor) {
+      if (!loadedFont) return;
+      if (!text || text.trim().length === 0) text = "Your Name";
 
-    const plateGeo = new THREE.BoxGeometry(160, 50, 6);
-    const plateMat = new THREE.MeshPhongMaterial({ color: baseColor });
-    keychainBody = new THREE.Mesh(plateGeo, plateMat);
-    scene.add(keychainBody);
+      // Remove previous group
+      if (keychainGroup) {
+        scene.remove(keychainGroup);
+        keychainGroup.traverse((obj) => {
+          if (obj.geometry) obj.geometry.dispose();
+          if (obj.material) obj.material.dispose();
+        });
+      }
 
-    const holeGeo = new THREE.CylinderGeometry(8, 8, 10, 32);
-    holeMesh = new THREE.Mesh(holeGeo, new THREE.MeshPhongMaterial({ color: 0xffffff }));
-    holeMesh.rotation.x = Math.PI / 2;
-    holeMesh.position.set(-70, 0, 0);
-    scene.add(holeMesh);
+      keychainGroup = new THREE.Group();
 
-    const txtGeo = new THREE.TextGeometry(text, {
+      // Base text geometry settings
+      const textGeo = new THREE.TextGeometry(text, {
         font: loadedFont,
-        size: 22,
-        height: 4
-    });
+        size: 20,
+        height: 4,           // top layer height
+        bevelEnabled: true,
+        bevelThickness: 1.5,
+        bevelSize: 1,
+        bevelSegments: 5,
+        curveSegments: 8,
+      });
 
-    txtGeo.computeBoundingBox();
-    const xOffset = -(txtGeo.boundingBox.max.x - txtGeo.boundingBox.min.x) / 2;
-    const yOffset = -10;
+      textGeo.computeBoundingBox();
+      const bb = textGeo.boundingBox;
+      const textWidth = bb.max.x - bb.min.x;
+      const textHeight = bb.max.y - bb.min.y;
 
-    const textMat = new THREE.MeshPhongMaterial({ color: topColor });
-    textMesh = new THREE.Mesh(txtGeo, textMat);
-    textMesh.position.set(xOffset, yOffset, 4);
-    scene.add(textMesh);
-}
+      // Centering offsets
+      const xCenterOffset = - (bb.max.x + bb.min.x) / 2;
+      const yCenterOffset = - (bb.max.y + bb.min.y) / 2;
 
-window.onmessage = e => {
-    const d = e.data;
-    buildKeychain(d.text, d.topColor, d.baseColor);
-};
+      // Target width so long names shrink to fit
+      const TARGET_WIDTH = 150;
+      let scaleFactor = 1.0;
+      if (textWidth > 0) {
+        scaleFactor = TARGET_WIDTH / textWidth;
+      }
 
-function animate() {
-    requestAnimationFrame(animate);
-    renderer.render(scene, camera);
-    controls.update();
-}
+      // Top text mesh (front layer)
+      const topMat = new THREE.MeshPhongMaterial({ color: topColor });
+      const topMesh = new THREE.Mesh(textGeo, topMat);
 
-init();
-</script>
+      topMesh.position.set(xCenterOffset, yCenterOffset, 2); // slightly forward
+      keychainGroup.add(topMesh);
 
+      // Base layer: clone geometry
+      const baseGeo = textGeo.clone();
+      const baseMat = new THREE.MeshPhongMaterial({ color: baseColor });
+
+      const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+      // Position base as "offset" behind text
+      baseMesh.position.set(
+        xCenterOffset + 2.0,       // slight x offset
+        yCenterOffset - 2.0,       // slight y offset
+        -2                         // behind in Z
+      );
+      baseMesh.scale.set(1.08, 1.08, 0.7); // slightly larger & thinner
+      keychainGroup.add(baseMesh);
+
+      // Apply overall scaling for long names
+      keychainGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
+
+      // Give a slight tilt to make it look nicer
+      keychainGroup.rotation.x = -0.35;
+
+      scene.add(keychainGroup);
+    }
+
+    // Receive data from Wix (via postMessage)
+    window.onmessage = (e) => {
+      const d = e.data || {};
+      buildKeychain(
+        d.text || "Your Name",
+        d.topColor || "#ff0000",
+        d.baseColor || "#000000"
+      );
+    };
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Auto-rotate until user interacts
+      if (!userInteracted && keychainGroup) {
+        keychainGroup.rotation.y += 0.01;
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    init();
+  </script>
 </body>
 </html>
 
