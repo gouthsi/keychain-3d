@@ -5,129 +5,123 @@
 <title>3D Keychain Preview</title>
 <style>
     body { margin: 0; overflow: hidden; background: #ffffff; }
-    #preview { width: 100vw; height: 100vh; }
 </style>
 </head>
 
 <body>
-<div id="preview"></div>
+<div id="preview" style="width:100vw; height:100vh;"></div>
 
-<!-- Three.js -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r150/three.min.js"></script>
+<!-- THREE.JS r128 (STABLE with TextGeometry) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<!-- OrbitControls -->
 <script src="https://threejs.org/examples/js/controls/OrbitControls.js"></script>
+
+<!-- FontLoader + TextGeometry (MATCHING r128) -->
 <script src="https://threejs.org/examples/js/loaders/FontLoader.js"></script>
 <script src="https://threejs.org/examples/js/geometries/TextGeometry.js"></script>
 
 <script>
-
-// GLOBALS
 let scene, camera, renderer, controls;
 let keychainBody, holeMesh, textMesh;
-let fontLoaded = null;
+let loadedFont = null;
 
-// INIT SCENE
 function init() {
 
+    // SCENE
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff);
 
-    camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 2000);
-    camera.position.set(0, 60, 220);
+    // CAMERA
+    camera = new THREE.PerspectiveCamera(
+        45,
+        window.innerWidth / window.innerHeight,
+        1,
+        2000
+    );
+    camera.position.set(0, 80, 220);
 
+    // RENDERER
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.getElementById("preview").appendChild(renderer.domElement);
 
+    // CONTROLS
     controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
 
     // LIGHTS
-    const light1 = new THREE.DirectionalLight(0xffffff, 1);
-    light1.position.set(50, 50, 100);
-    scene.add(light1);
-
-    const light2 = new THREE.AmbientLight(0xffffff, 0.4);
-    scene.add(light2);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(100, 100, 100);
+    scene.add(dir);
 
     // LOAD FONT
     const loader = new THREE.FontLoader();
-    loader.load("https://threejs.org/examples/fonts/helvetiker_bold.typeface.json", font => {
-        fontLoaded = font;
-        buildKeychain("Your Name", "#ff0000", "#000000");
-    });
+    loader.load(
+        "https://threejs.org/examples/fonts/helvetiker_bold.typeface.json",
+        font => {
+            loadedFont = font;
+            buildKeychain("Your Name", "#ff0000", "#000000");
+        }
+    );
 
     animate();
 }
 
-// BUILD THE FULL KEYCHAIN
-function buildKeychain(text, textColor, baseColor) {
+function buildKeychain(text, topColor, baseColor) {
 
-    if (!fontLoaded) return;
+    if (!loadedFont) return;
 
-    // REMOVE OLD OBJECTS
+    // Remove old meshes
     if (keychainBody) scene.remove(keychainBody);
     if (holeMesh) scene.remove(holeMesh);
     if (textMesh) scene.remove(textMesh);
 
-    // ----------------------------------------
-    // KEYCHAIN RECTANGLE BODY
-    // ----------------------------------------
-    const bodyWidth = 160;
-    const bodyHeight = 50;
-    const bodyDepth = 6;
-
-    const bodyGeo = new THREE.BoxGeometry(bodyWidth, bodyHeight, bodyDepth);
-    const bodyMat = new THREE.MeshPhongMaterial({ color: baseColor });
-    keychainBody = new THREE.Mesh(bodyGeo, bodyMat);
+    // Base Plate
+    const plateGeo = new THREE.BoxGeometry(160, 50, 6);
+    const plateMat = new THREE.MeshPhongMaterial({ color: baseColor });
+    keychainBody = new THREE.Mesh(plateGeo, plateMat);
     scene.add(keychainBody);
 
-    // ----------------------------------------
-    // HOLE ON LEFT SIDE
-    // ----------------------------------------
-    const holeGeo = new THREE.CylinderGeometry(8, 8, bodyDepth + 1, 32);
-    const holeMat = new THREE.MeshPhongMaterial({ color: "#ffffff" });
-
-    holeMesh = new THREE.Mesh(holeGeo, holeMat);
+    // Hole
+    const holeGeo = new THREE.CylinderGeometry(8, 8, 10, 32);
+    holeMesh = new THREE.Mesh(holeGeo, new THREE.MeshPhongMaterial({ color: 0xffffff }));
     holeMesh.rotation.x = Math.PI / 2;
-    holeMesh.position.set(-bodyWidth/2 + 15, 0, 0);
+    holeMesh.position.set(-70, 0, 0);
     scene.add(holeMesh);
 
-    // ----------------------------------------
-    // EXTRUDED TEXT ON TOP
-    // ----------------------------------------
+    // Text
     const textGeo = new THREE.TextGeometry(text, {
-        font: fontLoaded,
+        font: loadedFont,
         size: 22,
-        height: 4,
-        bevelEnabled: false
+        height: 4
     });
 
     textGeo.computeBoundingBox();
+    const xOffset = -(textGeo.boundingBox.max.x - textGeo.boundingBox.min.x) / 2;
+    const yOffset = -10;
 
-    const textXOffset = - (textGeo.boundingBox.max.x - textGeo.boundingBox.min.x) / 2;
-    const textYOffset = -10;
-
-    const textMat = new THREE.MeshPhongMaterial({ color: textColor });
+    const textMat = new THREE.MeshPhongMaterial({ color: topColor });
     textMesh = new THREE.Mesh(textGeo, textMat);
-    textMesh.position.set(textXOffset, textYOffset, bodyDepth / 2);
+    textMesh.position.set(xOffset, yOffset, 4);
     scene.add(textMesh);
 }
 
-// RECEIVE MESSAGES FROM WIX
-window.onmessage = (e) => {
+// MESSAGE RECEIVER FROM WIX
+window.onmessage = e => {
     const d = e.data;
     buildKeychain(d.text, d.topColor, d.baseColor);
 };
 
-// RENDER LOOP
+// ANIMATE LOOP
 function animate() {
     requestAnimationFrame(animate);
-    controls.update();
     renderer.render(scene, camera);
+    controls.update();
 }
 
 init();
-
 </script>
 </body>
 </html>
+
