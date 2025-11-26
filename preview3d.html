@@ -11,15 +11,17 @@
 <body>
 <div id="preview" style="width:100vw; height:100vh;"></div>
 
-<!-- THREE.JS r128 (STABLE with TextGeometry) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- THREE.JS from jsDelivr (CORS safe) -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128/build/three.min.js"></script>
 
-<!-- OrbitControls -->
-<script src="https://threejs.org/examples/js/controls/OrbitControls.js"></script>
+<!-- CORS-SAFE OrbitControls -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/controls/OrbitControls.js"></script>
 
-<!-- FontLoader + TextGeometry (MATCHING r128) -->
-<script src="https://threejs.org/examples/js/loaders/FontLoader.js"></script>
-<script src="https://threejs.org/examples/js/geometries/TextGeometry.js"></script>
+<!-- CORS-SAFE FontLoader -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/loaders/FontLoader.js"></script>
+
+<!-- CORS-SAFE TextGeometry -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/geometries/TextGeometry.js"></script>
 
 <script>
 let scene, camera, renderer, controls;
@@ -27,12 +29,9 @@ let keychainBody, holeMesh, textMesh;
 let loadedFont = null;
 
 function init() {
-
-    // SCENE
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff);
 
-    // CAMERA
     camera = new THREE.PerspectiveCamera(
         45,
         window.innerWidth / window.innerHeight,
@@ -41,24 +40,20 @@ function init() {
     );
     camera.position.set(0, 80, 220);
 
-    // RENDERER
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.getElementById("preview").appendChild(renderer.domElement);
 
-    // CONTROLS
     controls = new THREE.OrbitControls(camera, renderer.domElement);
 
-    // LIGHTS
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
     const dir = new THREE.DirectionalLight(0xffffff, 0.8);
     dir.position.set(100, 100, 100);
     scene.add(dir);
 
-    // LOAD FONT
     const loader = new THREE.FontLoader();
     loader.load(
-        "https://threejs.org/examples/fonts/helvetiker_bold.typeface.json",
+        "https://cdn.jsdelivr.net/npm/three@0.128/examples/fonts/helvetiker_bold.typeface.json",
         font => {
             loadedFont = font;
             buildKeychain("Your Name", "#ff0000", "#000000");
@@ -69,51 +64,44 @@ function init() {
 }
 
 function buildKeychain(text, topColor, baseColor) {
-
     if (!loadedFont) return;
 
-    // Remove old meshes
     if (keychainBody) scene.remove(keychainBody);
     if (holeMesh) scene.remove(holeMesh);
     if (textMesh) scene.remove(textMesh);
 
-    // Base Plate
     const plateGeo = new THREE.BoxGeometry(160, 50, 6);
     const plateMat = new THREE.MeshPhongMaterial({ color: baseColor });
     keychainBody = new THREE.Mesh(plateGeo, plateMat);
     scene.add(keychainBody);
 
-    // Hole
     const holeGeo = new THREE.CylinderGeometry(8, 8, 10, 32);
     holeMesh = new THREE.Mesh(holeGeo, new THREE.MeshPhongMaterial({ color: 0xffffff }));
     holeMesh.rotation.x = Math.PI / 2;
     holeMesh.position.set(-70, 0, 0);
     scene.add(holeMesh);
 
-    // Text
-    const textGeo = new THREE.TextGeometry(text, {
+    const txtGeo = new THREE.TextGeometry(text, {
         font: loadedFont,
         size: 22,
         height: 4
     });
 
-    textGeo.computeBoundingBox();
-    const xOffset = -(textGeo.boundingBox.max.x - textGeo.boundingBox.min.x) / 2;
+    txtGeo.computeBoundingBox();
+    const xOffset = -(txtGeo.boundingBox.max.x - txtGeo.boundingBox.min.x) / 2;
     const yOffset = -10;
 
     const textMat = new THREE.MeshPhongMaterial({ color: topColor });
-    textMesh = new THREE.Mesh(textGeo, textMat);
+    textMesh = new THREE.Mesh(txtGeo, textMat);
     textMesh.position.set(xOffset, yOffset, 4);
     scene.add(textMesh);
 }
 
-// MESSAGE RECEIVER FROM WIX
 window.onmessage = e => {
     const d = e.data;
     buildKeychain(d.text, d.topColor, d.baseColor);
 };
 
-// ANIMATE LOOP
 function animate() {
     requestAnimationFrame(animate);
     renderer.render(scene, camera);
@@ -122,6 +110,7 @@ function animate() {
 
 init();
 </script>
+
 </body>
 </html>
 
