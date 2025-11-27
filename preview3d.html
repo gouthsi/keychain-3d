@@ -59,10 +59,10 @@
       dir2.position.set(-60, -80, -40);
       scene.add(dir2);
 
-      // Load font (approximation for Gill Sans – helvetiker)
+      // Load YOUR Gill Sans font (typeface.json)
       const loader = new THREE.FontLoader();
       loader.load(
-        "https://cdn.jsdelivr.net/npm/three@0.128/examples/fonts/helvetiker_bold.typeface.json",
+        "https://gouthsi.github.io/keychain-3d/gill_sans_heavy.typeface.json",  // <-- CHANGE THIS
         (font) => {
           loadedFont = font;
           buildKeychain("Your Name", "#ff0000", "#000000");
@@ -81,9 +81,11 @@
       renderer.setSize(w, h);
     }
 
-    // text = name
-    // topColor = text layer color
-    // baseColor = offset base layer color
+    /**
+     * text      = customer name
+     * topColor  = color of raised text
+     * baseColor = color of offset base behind text
+     */
     function buildKeychain(text, topColor, baseColor) {
       if (!loadedFont) return;
       if (!text || text.trim().length === 0) text = "Your Name";
@@ -100,15 +102,19 @@
       keychainGroup = new THREE.Group();
 
       // Base text geometry settings
+      const baseSize = 20;     // font size before scaling
+      const topHeight = 3;     // text layer thickness
+      const baseHeight = 4;    // base layer thickness (slightly thicker)
+
       const textGeo = new THREE.TextGeometry(text, {
         font: loadedFont,
-        size: 20,
-        height: 4,           // top layer height
+        size: baseSize,
+        height: topHeight,
         bevelEnabled: true,
-        bevelThickness: 1.5,
-        bevelSize: 1,
-        bevelSegments: 5,
-        curveSegments: 8,
+        bevelThickness: 1.2,
+        bevelSize: 0.9,
+        bevelSegments: 6,
+        curveSegments: 10,
       });
 
       textGeo.computeBoundingBox();
@@ -120,39 +126,40 @@
       const xCenterOffset = - (bb.max.x + bb.min.x) / 2;
       const yCenterOffset = - (bb.max.y + bb.min.y) / 2;
 
-      // Target width so long names shrink to fit
-      const TARGET_WIDTH = 150;
+      // Auto-fit: scale long names down to target width
+      const TARGET_WIDTH = 160;  // adjust for your typical name length
       let scaleFactor = 1.0;
       if (textWidth > 0) {
         scaleFactor = TARGET_WIDTH / textWidth;
       }
 
-      // Top text mesh (front layer)
+      // --- TOP TEXT LAYER (raised) ---
       const topMat = new THREE.MeshPhongMaterial({ color: topColor });
       const topMesh = new THREE.Mesh(textGeo, topMat);
-
-      topMesh.position.set(xCenterOffset, yCenterOffset, 2); // slightly forward
+      topMesh.position.set(xCenterOffset, yCenterOffset, baseHeight / 2); // sits on base
       keychainGroup.add(topMesh);
 
-      // Base layer: clone geometry
+      // --- BASE LAYER (offset silhouette) ---
       const baseGeo = textGeo.clone();
       const baseMat = new THREE.MeshPhongMaterial({ color: baseColor });
-
       const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-      // Position base as "offset" behind text
+
+      // Slightly larger + offset in XY + a bit behind in Z
+      const BASE_SCALE = 1.15; // how much bigger the outline is than text
+      baseMesh.scale.set(BASE_SCALE, BASE_SCALE, baseHeight / topHeight);
       baseMesh.position.set(
-        xCenterOffset + 2.0,       // slight x offset
-        yCenterOffset - 2.0,       // slight y offset
-        -2                         // behind in Z
+        xCenterOffset + 1.5,         // slight x offset
+        yCenterOffset - 1.5,         // slight y offset
+        -baseHeight / 2              // behind
       );
-      baseMesh.scale.set(1.08, 1.08, 0.7); // slightly larger & thinner
       keychainGroup.add(baseMesh);
 
-      // Apply overall scaling for long names
+      // Apply overall scaling
       keychainGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-      // Give a slight tilt to make it look nicer
+      // Tilt and center a bit
       keychainGroup.rotation.x = -0.35;
+      keychainGroup.position.set(0, 0, 0);
 
       scene.add(keychainGroup);
     }
@@ -183,4 +190,3 @@
   </script>
 </body>
 </html>
-
