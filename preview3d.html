@@ -18,7 +18,7 @@
 <body>
   <div id="preview"></div>
 
-  <!-- Three.js (CORS-safe from jsDelivr) -->
+  <!-- Three.js (CORS-safe) -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.128/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/loaders/FontLoader.js"></script>
@@ -34,8 +34,12 @@
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0xffffff);
 
-      const aspect = window.innerWidth / window.innerHeight;
-      camera = new THREE.PerspectiveCamera(45, aspect, 1, 2000);
+      camera = new THREE.PerspectiveCamera(
+        45,
+        window.innerWidth / window.innerHeight,
+        1,
+        2000
+      );
       camera.position.set(0, 70, 220);
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -44,36 +48,37 @@
 
       controls = new THREE.OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
-      controls.dampingFactor = 0.1;
+
       controls.addEventListener("start", () => {
-        userInteracted = true; // stop auto-rotate when user touches
+        userInteracted = true;
       });
 
-      // Lights
+      // lighting
       scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-      const dir1 = new THREE.DirectionalLight(0xffffff, 0.8);
-      dir1.position.set(80, 120, 100);
-      scene.add(dir1);
 
-      const dir2 = new THREE.DirectionalLight(0xffffff, 0.4);
-      dir2.position.set(-60, -80, -40);
-      scene.add(dir2);
+      const d1 = new THREE.DirectionalLight(0xffffff, 0.8);
+      d1.position.set(80, 120, 100);
+      scene.add(d1);
 
-      // Load YOUR Gill Sans font (typeface.json)
+      const d2 = new THREE.DirectionalLight(0xffffff, 0.4);
+      d2.position.set(-60, -80, -40);
+      scene.add(d2);
+
+      // LOAD YOUR FONT HERE (IMPORTANT)
       const loader = new THREE.FontLoader();
       loader.load(
-        "https://gouthsi.github.io/keychain-3d/gill_sans_heavy.typeface.json",  // <-- CHANGE THIS
+        "https://YOUR_USERNAME.github.io/keychain-3d/gill_sans_heavy.typeface.json",  // CHANGE THIS
         (font) => {
           loadedFont = font;
           buildKeychain("Your Name", "#ff0000", "#000000");
         }
       );
 
-      window.addEventListener("resize", onWindowResize);
+      window.addEventListener("resize", onResize);
       animate();
     }
 
-    function onWindowResize() {
+    function onResize() {
       const w = window.innerWidth;
       const h = window.innerHeight;
       camera.aspect = w / h;
@@ -81,90 +86,70 @@
       renderer.setSize(w, h);
     }
 
-    /**
-     * text      = customer name
-     * topColor  = color of raised text
-     * baseColor = color of offset base behind text
-     */
     function buildKeychain(text, topColor, baseColor) {
       if (!loadedFont) return;
       if (!text || text.trim().length === 0) text = "Your Name";
 
-      // Remove previous group
       if (keychainGroup) {
         scene.remove(keychainGroup);
-        keychainGroup.traverse((obj) => {
-          if (obj.geometry) obj.geometry.dispose();
-          if (obj.material) obj.material.dispose();
+        keychainGroup.traverse((o) => {
+          if (o.geometry) o.geometry.dispose();
+          if (o.material) o.material.dispose();
         });
       }
 
       keychainGroup = new THREE.Group();
 
-      // Base text geometry settings
-      const baseSize = 20;     // font size before scaling
-      const topHeight = 3;     // text layer thickness
-      const baseHeight = 4;    // base layer thickness (slightly thicker)
+      // your actual 3D print proportions
+      const topHeight = 1.8;   // text thickness
+      const baseHeight = 4;    // base thickness
+      const fontSize   = 20;   // base font size
 
+      // thin bevel (matching your STL)
       const textGeo = new THREE.TextGeometry(text, {
         font: loadedFont,
-        size: baseSize,
+        size: fontSize,
         height: topHeight,
         bevelEnabled: true,
-        bevelThickness: 1.2,
-        bevelSize: 0.9,
-        bevelSegments: 6,
-        curveSegments: 10,
+        bevelThickness: 0.35,
+        bevelSize: 0.25,
+        bevelSegments: 3,
+        curveSegments: 8,
       });
 
       textGeo.computeBoundingBox();
       const bb = textGeo.boundingBox;
-      const textWidth = bb.max.x - bb.min.x;
-      const textHeight = bb.max.y - bb.min.y;
+      const w = bb.max.x - bb.min.x;
+      const h = bb.max.y - bb.min.y;
 
-      // Centering offsets
-      const xCenterOffset = - (bb.max.x + bb.min.x) / 2;
-      const yCenterOffset = - (bb.max.y + bb.min.y) / 2;
+      const cx = -(bb.max.x + bb.min.x) / 2;
+      const cy = -(bb.max.y + bb.min.y) / 2;
 
-      // Auto-fit: scale long names down to target width
-      const TARGET_WIDTH = 160;  // adjust for your typical name length
-      let scaleFactor = 1.0;
-      if (textWidth > 0) {
-        scaleFactor = TARGET_WIDTH / textWidth;
-      }
+      const MAX_WIDTH = 150;
+      const scaleFactor = w > 0 ? MAX_WIDTH / w : 1;
 
-      // --- TOP TEXT LAYER (raised) ---
+      // --- TOP LAYER ---
       const topMat = new THREE.MeshPhongMaterial({ color: topColor });
       const topMesh = new THREE.Mesh(textGeo, topMat);
-      topMesh.position.set(xCenterOffset, yCenterOffset, baseHeight / 2); // sits on base
+      topMesh.position.set(cx, cy, baseHeight); 
       keychainGroup.add(topMesh);
 
-      // --- BASE LAYER (offset silhouette) ---
+      // --- BASE LAYER (slight offset like STL) ---
       const baseGeo = textGeo.clone();
       const baseMat = new THREE.MeshPhongMaterial({ color: baseColor });
       const baseMesh = new THREE.Mesh(baseGeo, baseMat);
 
-      // Slightly larger + offset in XY + a bit behind in Z
-      const BASE_SCALE = 1.15; // how much bigger the outline is than text
-      baseMesh.scale.set(BASE_SCALE, BASE_SCALE, baseHeight / topHeight);
-      baseMesh.position.set(
-        xCenterOffset + 1.5,         // slight x offset
-        yCenterOffset - 1.5,         // slight y offset
-        -baseHeight / 2              // behind
-      );
+      baseMesh.scale.set(1.05, 1.05, baseHeight / topHeight); 
+      baseMesh.position.set(cx + 0.5, cy - 0.5, 0); 
       keychainGroup.add(baseMesh);
 
-      // Apply overall scaling
       keychainGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
-      // Tilt and center a bit
-      keychainGroup.rotation.x = -0.35;
-      keychainGroup.position.set(0, 0, 0);
+      keychainGroup.rotation.x = -0.22;
 
       scene.add(keychainGroup);
     }
 
-    // Receive data from Wix (via postMessage)
     window.onmessage = (e) => {
       const d = e.data || {};
       buildKeychain(
@@ -177,7 +162,6 @@
     function animate() {
       requestAnimationFrame(animate);
 
-      // Auto-rotate until user interacts
       if (!userInteracted && keychainGroup) {
         keychainGroup.rotation.y += 0.01;
       }
@@ -190,3 +174,4 @@
   </script>
 </body>
 </html>
+
