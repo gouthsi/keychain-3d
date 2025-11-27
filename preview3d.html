@@ -67,7 +67,7 @@
       // LOAD YOUR FONT HERE (IMPORTANT)
       const loader = new THREE.FontLoader();
       loader.load(
-        "https://gouthsi.github.io/keychain-3d/gill_sans_heavy.typeface.json",  // CHANGE THIS
+        "https://gouthsi.github.io/keychain-3d/gill_sans_heavy.typeface.json",  // TODO: replace with real URL
         (font) => {
           loadedFont = font;
           buildKeychain("Your Name", "#ff0000", "#000000");
@@ -100,12 +100,11 @@
 
       keychainGroup = new THREE.Group();
 
-      // your actual 3D print proportions
+      // proportions
       const topHeight = 1.8;   // text thickness
       const baseHeight = 4;    // base thickness
       const fontSize   = 20;   // base font size
 
-      // thin bevel (matching your STL)
       const textGeo = new THREE.TextGeometry(text, {
         font: loadedFont,
         size: fontSize,
@@ -128,28 +127,33 @@
       const MAX_WIDTH = 150;
       const scaleFactor = w > 0 ? MAX_WIDTH / w : 1;
 
-      // --- TOP LAYER ---
+      // --- TOP LAYER (front text) ---
       const topMat = new THREE.MeshPhongMaterial({ color: topColor });
       const topMesh = new THREE.Mesh(textGeo, topMat);
-      topMesh.position.set(cx, cy, baseHeight); 
+      topMesh.position.set(cx, cy, baseHeight); // sits on top of base
       keychainGroup.add(topMesh);
 
-      // --- BASE LAYER (slight offset like STL) ---
+      // --- BASE LAYER (true contour offset, no sideways shift) ---
       const baseGeo = textGeo.clone();
       const baseMat = new THREE.MeshPhongMaterial({ color: baseColor });
       const baseMesh = new THREE.Mesh(baseGeo, baseMat);
 
-      baseMesh.scale.set(1.05, 1.05, baseHeight / topHeight); 
-      baseMesh.position.set(cx + 0.5, cy - 0.5, 0); 
+      // slightly larger all around, BUT same center (no XY offset)
+      const BASE_SCALE = 1.08; // a touch bigger so border shows evenly
+      baseMesh.scale.set(BASE_SCALE, BASE_SCALE, baseHeight / topHeight);
+      baseMesh.position.set(cx, cy, 0); // exactly under text, projected from back
       keychainGroup.add(baseMesh);
 
+      // scale for long names
       keychainGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
 
+      // gentle tilt for nicer view
       keychainGroup.rotation.x = -0.22;
 
       scene.add(keychainGroup);
     }
 
+    // from Wix
     window.onmessage = (e) => {
       const d = e.data || {};
       buildKeychain(
@@ -174,5 +178,4 @@
   </script>
 </body>
 </html>
-
 
