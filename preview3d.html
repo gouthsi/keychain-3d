@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8" />
-  <title>3D Keychain Text Preview</title>
-  <style>
-    body { margin: 0; overflow: hidden; background: #ffffff; }
-    #preview { width: 100vw; height: 100vh; }
-  </style>
+<meta charset="UTF-8" />
+<title>3D Keychain Preview</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #fff; }
+  #preview { width: 100vw; height: 100vh; }
+</style>
 </head>
 
 <body>
@@ -18,46 +18,24 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/loaders/FontLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/geometries/TextGeometry.js"></script>
 
+<!-- ClipperJS (for true polygon offset) -->
+<script src="https://cdn.jsdelivr.net/npm/clipper-lib@6.4.2/clipper.js"></script>
+
 <script>
 let scene, camera, renderer, controls;
 let keyGroup = null;
 let loadedFont = null;
 let interacted = false;
 
-// -------- PROPER OUTLINE OFFSET (5mm) --------
-const BORDER_OFFSET = 5;
-
-function offsetShapePoints(points, offset) {
-    const out = [];
-    for (let i = 0; i < points.length; i++) {
-        const p = points[i];
-        const n = points[(i + 1) % points.length];
-        const dx = n.x - p.x;
-        const dy = n.y - p.y;
-
-        const len = Math.hypot(dx, dy) || 1;
-        const nx = -dy / len;
-        const ny = dx / len;
-
-        out.push({ x: p.x + nx * offset, y: p.y + ny * offset });
-    }
-    return out;
-}
-
-function pointsToShape(points) {
-    const shape = new THREE.Shape();
-    shape.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) shape.lineTo(points[i].x, points[i].y);
-    shape.lineTo(points[0].x, points[0].y);
-    return shape;
-}
+const BORDER_MM = 5;          // uniform border thickness
+const SCALE_FACTOR = 10;      // Clipper works best with scaled coords
 
 function init() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff);
 
     camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
-    camera.position.set(0, 50, 200);
+    camera.position.set(0, 60, 200);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -68,14 +46,14 @@ function init() {
     controls.addEventListener("start", () => interacted = true);
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const dl = new THREE.DirectionalLight(0xffffff, 0.8);
-    dl.position.set(80, 100, 80);
-    scene.add(dl);
+    const d1 = new THREE.DirectionalLight(0xffffff, 0.9);
+    d1.position.set(80, 110, 100);
+    scene.add(d1);
 
-    const fontLoader = new THREE.FontLoader();
-    fontLoader.load(
-        "https://gouthsi.github.io/keychain-3d/gill_sans_heavy.typeface.json",  // CHANGE THIS
-        (font) => {
+    const loader = new THREE.FontLoader();
+    loader.load(
+        "https://gouthsi.github.io/keychain-3d/gill_sans_heavy.typeface.json",   // CHANGE THIS
+        font => {
             loadedFont = font;
             buildKeychain("Your Name", "#ff0000", "#000000");
         }
@@ -91,9 +69,42 @@ function onResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
+
+// ------------------------------------------
+// TRUE OUTLINE USING CLIPPER OFFSET
+// ------------------------------------------
+
+function createOutlineShapes(shape, offsetAmount) {
+    const pts = shape.getPoints(20);
+
+    // convert to clipper format
+    const path = pts.map(p => ({ X: p.x * SCALE_FACTOR, Y: p.y * SCALE_FACTOR }));
+
+    const co = new ClipperLib.ClipperOffset(2, 1);
+    co.AddPath(path, ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon);
+
+    const solution = new ClipperLib.Paths();
+    co.Execute(solution, offsetAmount * SCALE_FACTOR);
+
+    const shapes = [];
+
+    solution.forEach(s => {
+        const newPts = s.map(p => new THREE.Vector2(p.X / SCALE_FACTOR, p.Y / SCALE_FACTOR));
+        const newShape = new THREE.Shape(newPts);
+        shapes.push(newShape);
+    });
+
+    return shapes;
+}
+
+
+
+// ------------------------------------------
+// BUILD KEYCHAIN
+// ------------------------------------------
+
 function buildKeychain(text, topColor, baseColor) {
     if (!loadedFont) return;
-    if (!text.trim()) text = "Your Name";
 
     if (keyGroup) {
         scene.remove(keyGroup);
@@ -102,54 +113,53 @@ function buildKeychain(text, topColor, baseColor) {
             if (o.material) o.material.dispose();
         });
     }
-
     keyGroup = new THREE.Group();
 
-    const topHeight = 1.8;
-    const baseHeight = 4;
+    const topH = 1.8;
+    const baseH = 4;
     const fontSize = 20;
 
-    // ---- Text geometry ----
+    // top text
     const textGeo = new THREE.TextGeometry(text, {
         font: loadedFont,
         size: fontSize,
-        height: topHeight,
+        height: topH,
         bevelEnabled: true,
-        bevelThickness: 0.32,
-        bevelSize: 0.22,
+        bevelThickness: 0.3,
+        bevelSize: 0.23,
         bevelSegments: 3,
         curveSegments: 8
     });
 
     textGeo.computeBoundingBox();
     const bb = textGeo.boundingBox;
-    const textWidth = bb.max.x - bb.min.x;
 
+    const width = bb.max.x - bb.min.x;
     const cx = -(bb.max.x + bb.min.x) / 2;
     const cy = -(bb.max.y + bb.min.y) / 2;
 
-    // auto-fit width
-    const MAX_WIDTH = 150;
-    const scaleFactor = MAX_WIDTH / textWidth;
+    const MAX_W = 150;
+    const scale = MAX_W / width;
 
-    // TOP LAYER
-    const topMat = new THREE.MeshPhongMaterial({ color: topColor });
-    const topMesh = new THREE.Mesh(textGeo, topMat);
-    topMesh.position.set(cx, cy, baseHeight);
-    keyGroup.add(topMesh);
+    const textMesh = new THREE.Mesh(
+        textGeo,
+        new THREE.MeshPhongMaterial({ color: topColor })
+    );
+    textMesh.position.set(cx, cy, baseH);
+    keyGroup.add(textMesh);
 
-    // -------- REAL OUTLINE BASE (5mm) --------
+    // Real outline generation
     const rawShapes = loadedFont.generateShapes(text, fontSize);
-    const outlineShapes = [];
+    let finalOutlineShapes = [];
 
-    for (const s of rawShapes) {
-        const pts = s.getPoints(8);
-        const expanded = offsetShapePoints(pts, BORDER_OFFSET);
-        outlineShapes.push(pointsToShape(expanded));
-    }
+    rawShapes.forEach(sh => {
+        const expanded = createOutlineShapes(sh, BORDER_MM);
+        finalOutlineShapes.push(...expanded);
+    });
 
-    const baseGeo = new THREE.ExtrudeGeometry(outlineShapes, {
-        depth: baseHeight,
+    // extrude base layer
+    const baseGeo = new THREE.ExtrudeGeometry(finalOutlineShapes, {
+        depth: baseH,
         bevelEnabled: false,
         curveSegments: 8,
     });
@@ -157,26 +167,28 @@ function buildKeychain(text, topColor, baseColor) {
     const baseMat = new THREE.MeshPhongMaterial({ color: baseColor });
     const baseMesh = new THREE.Mesh(baseGeo, baseMat);
 
-    // CENTER BASE EXACTLY
     baseGeo.computeBoundingBox();
-    const bbb = baseGeo.boundingBox;
-    const bx = -(bbb.max.x + bbb.min.x) / 2;
-    const by = -(bbb.max.y + bbb.min.y) / 2;
+    const bb2 = baseGeo.boundingBox;
+
+    const bx = -(bb2.max.x + bb2.min.x) / 2;
+    const by = -(bb2.max.y + bb2.min.y) / 2;
 
     baseMesh.position.set(bx, by, 0);
     keyGroup.add(baseMesh);
 
-    // apply scale
-    keyGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
+    // scale for long names
+    keyGroup.scale.set(scale, scale, scale);
 
-    // only tilt the ENTIRE GROUP (not layers individually)
-    keyGroup.rotation.x = -0.22;
+    // slight tilt for view only
+    keyGroup.rotation.x = -0.2;
 
     scene.add(keyGroup);
 }
 
+
+// Wix → viewer
 window.onmessage = (e) => {
-    const d = e.data || {};
+    const d = e.data;
     buildKeychain(
         d.text || "Your Name",
         d.topColor || "#ff0000",
