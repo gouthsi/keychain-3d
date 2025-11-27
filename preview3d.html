@@ -18,7 +18,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/loaders/FontLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/geometries/TextGeometry.js"></script>
 
-<!-- Clipper for boolean union + sharp outline -->
+<!-- Clipper (boolean union + miter offset) -->
 <script src="https://cdn.jsdelivr.net/npm/clipper-lib@6.4.2/clipper.js"></script>
 
 <script>
@@ -27,73 +27,71 @@ let keyGroup = null;
 let loadedFont = null;
 let interacted = false;
 
-// Customizable
-const BORDER_MM = 2;          // 2mm border
-const SCALE_FACTOR = 20;      // Clipper scaling factor
+const BORDER_MM = 2;  
+const SCALE_FACTOR = 20;
 
-//--------------------------------------------------------
-// MERGE ALL LETTER SHAPES + OFFSET THEM (sharp corners)
-//--------------------------------------------------------
+// ===============================
+// BUILD MERGED OUTLINE
+// ===============================
 function buildBaseOutline(rawShapes, borderMM) {
 
-    const scale = SCALE_FACTOR;
     let allPaths = [];
 
-    // 1) Convert all shapes to polygons
     rawShapes.forEach(sh => {
         const pts = sh.getPoints(40);
         const path = pts.map(p => ({
-            X: Math.round(p.x * scale),
-            Y: Math.round(p.y * scale)
+            X: Math.round(p.x * SCALE_FACTOR),
+            Y: Math.round(p.y * SCALE_FACTOR)
         }));
         allPaths.push(path);
     });
 
-    // 2) Boolean UNION → merge all letters into ONE shape
+    // UNION
+    const c = new ClipperLib.Clipper();
     let unionSolution = new ClipperLib.Paths();
-    const clip = new ClipperLib.Clipper();
 
-    clip.AddPaths(allPaths, ClipperLib.PolyType.ptSubject, true);
-    clip.Execute(
+    c.AddPaths(allPaths, ClipperLib.PolyType.ptSubject, true);
+    c.Execute(
         ClipperLib.ClipType.ctUnion,
         unionSolution,
         ClipperLib.PolyFillType.pftNonZero,
         ClipperLib.PolyFillType.pftNonZero
     );
 
-    // 3) OFFSET merged shape (sharp corners)
+    // OFFSET
     const co = new ClipperLib.ClipperOffset(2, 1);
     co.MiterLimit = 20;
 
     co.AddPaths(
-        unionSolution, 
-        ClipperLib.JoinType.jtMiter,    // Miter = sharp corners
+        unionSolution,
+        ClipperLib.JoinType.jtMiter,
         ClipperLib.EndType.etClosedPolygon
     );
 
-    let offsetSolution = new ClipperLib.Paths();
-    co.Execute(offsetSolution, borderMM * scale);
+    let expandedPaths = new ClipperLib.Paths();
+    co.Execute(expandedPaths, borderMM * SCALE_FACTOR);
 
-    // 4) Convert back to Three.js Shape[] array
-    let outShapes = [];
-    offsetSolution.forEach(poly => {
+    // Convert back to shapes
+    let shapesOut = [];
+
+    expandedPaths.forEach(poly => {
         const pts = poly.map(p =>
-            new THREE.Vector2(p.X / scale, p.Y / scale)
+            new THREE.Vector2(p.X / SCALE_FACTOR, p.Y / SCALE_FACTOR)
         );
-        outShapes.push(new THREE.Shape(pts));
+        shapesOut.push(new THREE.Shape(pts));
     });
 
-    return outShapes;
+    return shapesOut;
 }
 
-//--------------------------------------------------------
-// SCENE SETUP
-//--------------------------------------------------------
+// ===============================
+// SCENE
+// ===============================
 function init() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff);
 
-    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
+    camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 1, 2000);
     camera.position.set(0, 60, 200);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -102,20 +100,19 @@ function init() {
 
     controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+
     controls.addEventListener("start", () => interacted = true);
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-
     const d1 = new THREE.DirectionalLight(0xffffff, 0.9);
     d1.position.set(80, 120, 100);
     scene.add(d1);
 
-    // LOAD FONT
     const loader = new THREE.FontLoader();
     loader.load(
-        "https://gouthsi.github.io/keychain-3d/gill_sans_heavy.typeface.json",   // ← CHANGE THIS ONLY
-        font => {
-            loadedFont = font;
+        "https://gouthsi.github.io/keychain-3d/gill_sans_heavy.typeface.json",  // CHANGE
+        f => {
+            loadedFont = f;
             buildKeychain("Your Name", "#ff0000", "#000000");
         }
     );
@@ -125,15 +122,16 @@ function init() {
 }
 
 function onResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.aspect = window.innerWidth/window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-//--------------------------------------------------------
-// BUILD THE KEYCHAIN MODEL
-//--------------------------------------------------------
+// ===============================
+// BUILD KEYCHAIN
+// ===============================
 function buildKeychain(text, topColor, baseColor) {
+
     if (!loadedFont) return;
 
     if (keyGroup) {
@@ -146,17 +144,15 @@ function buildKeychain(text, topColor, baseColor) {
 
     keyGroup = new THREE.Group();
 
-    const topHeight  = 1.8;
-    const baseHeight = 4;
-    const fontSize   = 20;
+    const topH  = 1.8;
+    const baseH = 4;
+    const fontSize = 20;
 
-    //--------------------------------------------------------
     // TOP TEXT
-    //--------------------------------------------------------
     const textGeo = new THREE.TextGeometry(text, {
         font: loadedFont,
         size: fontSize,
-        height: topHeight,
+        height: topH,
         bevelEnabled: true,
         bevelThickness: 0.3,
         bevelSize: 0.22,
@@ -166,32 +162,27 @@ function buildKeychain(text, topColor, baseColor) {
 
     textGeo.computeBoundingBox();
     const bb = textGeo.boundingBox;
-    const width = bb.max.x - bb.min.x;
 
-    // center text
+    const w = bb.max.x - bb.min.x;
     const cx = -(bb.max.x + bb.min.x) / 2;
     const cy = -(bb.max.y + bb.min.y) / 2;
 
-    // auto-fit to width
     const MAX_W = 150;
-    const scaleFactor = MAX_W / width;
+    const scaleFactor = MAX_W / w;
 
     const topMesh = new THREE.Mesh(
         textGeo,
         new THREE.MeshPhongMaterial({ color: topColor })
     );
-    topMesh.position.set(cx, cy, baseHeight);
+    topMesh.position.set(cx, cy, baseH);
     keyGroup.add(topMesh);
 
-    //--------------------------------------------------------
-    // BASE LAYER — MERGED + OFFSET OUTLINE
-    //--------------------------------------------------------
+    // BASE OUTLINE (MERGED)
     const rawShapes = loadedFont.generateShapes(text, fontSize);
     const baseShapes = buildBaseOutline(rawShapes, BORDER_MM);
 
-    // extrude base
     const baseGeo = new THREE.ExtrudeGeometry(baseShapes, {
-        depth: baseHeight,
+        depth: baseH,
         bevelEnabled: false,
         curveSegments: 10
     });
@@ -202,31 +193,24 @@ function buildKeychain(text, topColor, baseColor) {
     );
 
     baseGeo.computeBoundingBox();
-    const bbb = baseGeo.boundingBox;
+    const bb2 = baseGeo.boundingBox;
 
-    const bx = -(bbb.max.x + bbb.min.x) / 2;
-    const by = -(bbb.max.y + bbb.min.y) / 2;
+    const bx = -(bb2.max.x + bb2.min.x) / 2;
+    const by = -(bb2.max.y + bb2.min.y) / 2;
 
     baseMesh.position.set(bx, by, 0);
     keyGroup.add(baseMesh);
 
-    //--------------------------------------------------------
-    // SCALE + PLACE IN SCENE
-    //--------------------------------------------------------
     keyGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
     keyGroup.rotation.x = -0.22;
 
     scene.add(keyGroup);
 }
 
-//--------------------------------------------------------
+// ===============================
 window.onmessage = (e) => {
     const d = e.data;
-    buildKeychain(
-        d.text || "Your Name",
-        d.topColor || "#ff0000",
-        d.baseColor || "#000000"
-    );
+    buildKeychain(d.text, d.topColor, d.baseColor);
 };
 
 function animate() {
@@ -244,4 +228,3 @@ init();
 
 </body>
 </html>
-
